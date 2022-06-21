@@ -1,0 +1,87 @@
+SELECT DISTINCT
+	ord.ord_id AS order_id,
+	ord.sku_id AS sku_id,
+	ord.sku_name,
+	ord.brand_name,
+	cat_lvl1_name_en,
+	cat_lvl2_name_en,
+	cat_lvl3_name_en,
+	ord.book_dt AS book_date,
+	SUBSTR(ord.ord_compl_tm, 0, 10) AS complete_date,
+	sku.major_supp_brevity_code AS Supplier_ID,
+	sku.major_supp_name AS Supplier_Name,
+	sku.otc_operr_erp_id AS MD_erp,
+	serial2.serial AS imei
+FROM
+	(
+		SELECT
+			*
+		FROM
+			(
+				SELECT
+					sale_ord_id ord_id,
+					item_sku_id sku_id,
+					sku_name,
+					sale_ord_dt book_dt,
+					ord_complete_tm ord_compl_tm,
+					brand_name_en brand_name,
+					item_first_cate_name cat_lvl1_name_en,
+					item_second_cate_name cat_lvl2_name_en,
+					item_third_cate_name cat_lvl3_name_en,
+					dense_rank() over(PARTITION BY sale_ord_id order by dt DESC) AS dt_rank
+				FROM
+					adm.adm_s04_glb_trade_ord_det_sku_snapshot
+				WHERE
+					YEAR(dt) >= '2022'
+					AND SUBSTR(sale_ord_dt, 0, 4) = SUBSTR(sysdate( - 1), 0, 4)
+					AND SUBSTR(sale_ord_dt, 0, 7) = SUBSTR(sysdate( - 1), 0, 7)
+					AND
+					(
+						item_first_cate_cd = '75060932'
+						OR shop_id IN(1000080201, 1000080241, 1000080221)
+					)
+					AND
+					(
+						intraday_ord_complete_flag = 1
+						--OR intraday_ord_deal_flag = 1
+						--OR intraday_ord_valid_flag = 1
+					)
+					AND purchaser_erp_acct IN('idprema', 'idfachrul', 'idmarwan', 'idmikhad', 'idilhamad')
+			)
+			x
+		WHERE
+			dt_rank = 1
+	)
+	ord
+LEFT JOIN
+	(
+		SELECT
+			bill_no,
+			goods_no,
+			serial
+		FROM
+			fdm.fdm_report_bs_serial_trac_detail_chain
+		WHERE
+			dp = 'ACTIVE'
+	)
+	serial2
+ON
+	serial2.bill_no = ord.ord_id
+LEFT JOIN
+	(
+		SELECT
+			item_sku_id,
+			major_supp_brevity_code,
+			major_supp_name,
+			otc_operr_erp_id
+		FROM
+			gdm.gdm_m03_glb_item_sku_da
+		WHERE
+			dt = sysdate( - 1)
+	)
+	sku
+ON
+	ord.sku_id = sku.item_sku_id
+WHERE
+	sku.otc_operr_erp_id IN('idilhamad', 'albert.hosea', 'idprema', 'idfachrul', 'idmarwan', 'idmikhad')
+	AND cat_lvl3_name_en NOT IN('Free Gift', 'Hadiah')
